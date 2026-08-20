@@ -1,0 +1,12 @@
+beautifulsoup4>=4.12
+chromadb>=1.0
+fastapi>=0.115
+langchain-chroma>=0.2
+langchain-core>=0.3
+langchain-groq>=0.3
+langchain-huggingface>=0.2
+langchain-text-splitters>=0.3
+langgraph>=0.2
+python-dotenv>=1.0
+requests>=2.32
+uvicorn[standard]>=0.34

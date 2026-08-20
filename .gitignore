@@ -1,0 +1,8 @@
+.env
+chroma_db
+node_modules
+venv
+__pycache__
+*.py[cod]
+sec_financials.db
+frontend/dist
