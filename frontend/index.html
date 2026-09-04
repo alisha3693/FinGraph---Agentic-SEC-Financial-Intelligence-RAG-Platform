@@ -4,7 +4,20 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SEC EDGAR Financial Intelligence Analyzer</title>
+    <title>FinGraph — SEC Financial Intelligence</title>
+    <script>
+      // Set the theme before first paint so there's no flash of the wrong palette —
+      // App.jsx's own effect (which also persists changes) keeps this in sync afterward.
+      (function () {
+        try {
+          var stored = localStorage.getItem('sec-intel-theme');
+          var theme = stored === 'light' || stored === 'dark'
+            ? stored
+            : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', theme);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

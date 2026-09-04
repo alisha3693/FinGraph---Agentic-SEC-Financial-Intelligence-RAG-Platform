@@ -79,6 +79,22 @@ def save_financials(ticker, cik, name, data_by_year):
     conn.commit()
     conn.close()
 
+def delete_company(ticker):
+    """Remove a company and its cached financials from the database."""
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT id FROM companies WHERE ticker = ?", (ticker.upper(),))
+    row = cursor.fetchone()
+    if row is None:
+        conn.close()
+        return False
+    co_id = row[0]
+    cursor.execute("DELETE FROM financials WHERE company_id = ?", (co_id,))
+    cursor.execute("DELETE FROM companies WHERE id = ?", (co_id,))
+    conn.commit()
+    conn.close()
+    return True
+
 def get_companies():
     """Fetch all cached companies in the database."""
     conn = sqlite3.connect(DB_PATH)

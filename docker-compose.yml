@@ -1,0 +1,49 @@
+# Dev-mode orchestration: two containers, both running your live source via bind mounts
+# so this behaves like your normal `python app.py` + `npm run dev` workflow, just with
+# consistent, disposable environments instead of your host's Python/Node install.
+#
+#   docker compose up --build   # first run, or after a requirements/package.json change
+#   docker compose up           # subsequent runs
+#   docker compose down         # stop + remove the containers (bind-mounted data is untouched)
+
+services:
+  backend:
+    build:
+      context: ./multihop-rag
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env   # GROQ_API_KEY, SEC_USER_AGENT — same file app.py already reads locally
+    environment:
+      # app.py's own reload switch (default off). It was turned off after a real
+      # Windows-native segfault tied to a duplicate-OpenMP-DLL race mid-reload (see
+      # docs/project-status-report.md) — that specific failure mode is Windows-host
+      # specific and shouldn't reproduce inside this Linux container, so hot-reload is
+      # re-enabled here for a normal dev loop. If you ever see the backend die or hang
+      # mid-ingest, set this back to "0" first and see if it recurs without reload.
+      - RELOAD=1
+    volumes:
+      - ./multihop-rag:/app
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "5173:5173"
+    environment:
+      # Matches App.jsx's own default — set explicitly so it's obvious where the
+      # frontend expects the backend, since it's the browser (on your host), not this
+      # container, that calls it.
+      - VITE_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume: keeps the node_modules installed *inside the image* instead of
+      # letting the bind mount above shadow it with whatever's (or isn't) on the host —
+      # the standard fix for "vite: not found" / native-binary-mismatch errors in
+      # containerized Vite dev setups.
+      - /app/node_modules
+    depends_on:
+      - backend
+    restart: unless-stopped

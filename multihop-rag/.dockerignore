@@ -1,0 +1,10 @@
+__pycache__
+*.py[cod]
+.env
+venv
+.venv
+# Local data stores: excluded from the *build context* so images stay small and never
+# bake in stale data. In dev mode they still reach the container fine via the bind mount
+# in docker-compose.yml, same as any other file in this directory.
+chroma_db
+sec_financials.db

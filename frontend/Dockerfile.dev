@@ -1,0 +1,22 @@
+# --- Frontend dev image (Vite + React) ---
+#
+# Like the backend image, this only bakes in node_modules; the actual source is
+# bind-mounted from the host at runtime (see ../docker-compose.yml) so Vite's hot module
+# reload keeps working exactly as it does when you run `npm run dev` directly.
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copied separately so `npm install` is its own cached layer, only re-run when the
+# lockfile actually changes.
+COPY package.json package-lock.json ./
+RUN npm install
+
+COPY . .
+
+EXPOSE 5173
+
+# --host so Vite's dev server binds 0.0.0.0 inside the container instead of just
+# localhost — without it, the port published to the host (5173:5173 in compose) would
+# have nothing listening on the container side to forward to.
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

@@ -9,4 +9,11 @@ langchain-text-splitters>=0.3
 langgraph>=0.2
 python-dotenv>=1.0
 requests>=2.32
+# langchain-huggingface's HuggingFaceEmbeddings needs this directly, but doesn't declare
+# it as a hard dependency (it's imported lazily, so pip never pulls it in on its own).
+# It was only ever present here because it happened to be installed globally on the dev
+# machine already — a clean install (Docker included) was missing it. See
+# docs/project-status-report.md.
+sentence-transformers>=5.7
+typing_extensions>=4.12
 uvicorn[standard]>=0.34
