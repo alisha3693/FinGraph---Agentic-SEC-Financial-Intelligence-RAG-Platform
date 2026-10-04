@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Send, BookOpen, ShieldAlert, Plus, X, CheckCircle,
   ArrowUpDown, ArrowUp, ArrowDown, ArrowUpRight, ArrowDownRight,
@@ -7,6 +7,8 @@ import {
 } from 'lucide-react';
 
 const THEME_KEY = 'sec-intel-theme';
+const PROMPT_HISTORY_KEY = 'sec-intel-prompt-history';
+const PROMPT_HISTORY_LIMIT = 5;
 
 function getInitialTheme() {
   try {
@@ -18,14 +20,27 @@ function getInitialTheme() {
   return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
+function getInitialPromptHistory() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PROMPT_HISTORY_KEY));
+    if (Array.isArray(stored)) return stored.filter((p) => typeof p === 'string').slice(0, PROMPT_HISTORY_LIMIT);
+  } catch {
+    // localStorage unavailable or holds malformed JSON — start with an empty history.
+  }
+  return [];
+}
+
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const METRIC_COLORS = { "Revenue": "#1d4ed8", "Net Income": "#0a7a4c", "EPS": "#b45309", "Assets": "#4338ca", "Liabilities": "#b42318" };
 const COMPARISON_PALETTE = ["#1d4ed8", "#0a7a4c", "#b45309", "#4338ca", "#b42318", "#0e7490", "#7c3aed", "#525252"];
 
 // Matches currency amounts ("$391.04B", "$6.11") and percentages ("12.5%") so they can be
-// set off from surrounding prose without touching any other text.
-const FIGURE_RE = /(\$\d[\d,]*\.?\d*(?:\s?(?:B|M|K|billion|million))?|\b\d+(?:\.\d+)?%)/i;
+// set off from surrounding prose without touching any other text. Longer words (billion,
+// million) must be listed before their single-letter abbreviations (B, M) — regex
+// alternation takes the first branch that matches at a position, not the longest, so
+// "B|billion" would match just the "b" of "billion" and leave "illion" outside the highlight.
+const FIGURE_RE = /(\$\d[\d,]*\.?\d*(?:\s?(?:billion|million|thousand|B|M|K))?|\b\d+(?:\.\d+)?%)/i;
 
 function renderFigureLine(line) {
   return line.split(FIGURE_RE).map((part, i) =>
@@ -334,12 +349,17 @@ function App() {
 
   // App states
   const [companies, setCompanies] = useState([]);
-  const [selectedTicker, setSelectedTicker] = useState('');
+  // The company/companies currently "in focus" — resolved entirely from the query text
+  // (auto-loading a company from SEC EDGAR if it isn't ingested yet) or from the sidebar's
+  // manual ingest form. One entry for a single-company query, two for a comparison.
+  const [activeCompanies, setActiveCompanies] = useState([]);
   const [newTicker, setNewTicker] = useState('');
   const [loadingTicker, setLoadingTicker] = useState(false);
   const [tickerMessage, setTickerMessage] = useState({ text: '', isError: false });
   const [defaultFinancials, setDefaultFinancials] = useState(null);
   const [theme, setTheme] = useState(getInitialTheme);
+  const [promptHistory, setPromptHistory] = useState(getInitialPromptHistory);
+  const promptInputRef = useRef(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -350,47 +370,61 @@ function App() {
     }
   }, [theme]);
 
-  const sampleQuestions = [
-    "What was Apple's revenue from 2021–2025?",
-    "Compare Apple and Microsoft revenue.",
-    "What risks did Apple mention in its latest 10-K?",
-    "What products/strategies are discussed in the filing?"
-  ];
+  // Records a submitted prompt at the front of the cached history (most recent first),
+  // moving an existing duplicate to the front instead of listing it twice, capped to the
+  // 5 most recent. Persisted to localStorage so it survives a reload.
+  const recordPromptHistory = (submitted) => {
+    setPromptHistory((prev) => {
+      const next = [submitted, ...prev.filter((p) => p !== submitted)].slice(0, PROMPT_HISTORY_LIMIT);
+      try {
+        localStorage.setItem(PROMPT_HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        // Ignore — history just won't persist across reloads in this environment.
+      }
+      return next;
+    });
+  };
 
-  const selectedCompany = companies.find((co) => co.ticker === selectedTicker) || null;
-  const companyFactsUrl = selectedCompany ? `https://data.sec.gov/api/xbrl/companyfacts/CIK${selectedCompany.cik}.json` : null;
+  // Single-company focus only — comparisons (two active companies) don't have one "company
+  // facts" link or a default-overview fetch of their own; the query response already carries
+  // both companies' data.
+  const activeTicker = activeCompanies.length === 1 ? activeCompanies[0].ticker : '';
+  const activeCompanyFull = activeTicker ? companies.find((co) => co.ticker === activeTicker) : null;
+  const companyFactsUrl = activeCompanyFull ? `https://data.sec.gov/api/xbrl/companyfacts/CIK${activeCompanyFull.cik}.json` : null;
 
-  // Fetch registered companies on load — DB is source of truth, no placeholder data
+  // Fetch registered companies on load — DB is source of truth, no placeholder data.
+  // Company selection stays query-driven; the sidebar is no longer used to scope answers.
+  // Returns the fetched list so callers can use it immediately, before the `companies`
+  // state update from this call has actually re-rendered.
   const fetchCompanies = async () => {
     try {
       const response = await fetch(`${API_BASE}/api/companies`);
       if (response.ok) {
         const data = await response.json();
         setCompanies(data);
-        // Auto-scope to the first ingested company so the default table/graph has
-        // something to show without requiring the user to click a chip first.
-        setSelectedTicker((prev) => prev || (data.length > 0 ? data[0].ticker : ''));
+        return data;
       }
     } catch (err) {
       console.error("Error loading companies list:", err);
     }
+    return null;
   };
 
   useEffect(() => {
     fetchCompanies();
   }, []);
 
-  // Default overview (all metrics: Revenue, Net Income, EPS, Assets, Liabilities) for
-  // whichever ticker is scoped, shown before any question has been asked.
+  // Full-metric overview (Revenue, Net Income, EPS, Assets, Liabilities) for whichever
+  // single company the latest query (or manual ingest) resolved — not a sidebar selection.
   useEffect(() => {
-    if (!selectedTicker) {
+    if (!activeTicker) {
       setDefaultFinancials(null);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const response = await fetch(`${API_BASE}/api/financials/${selectedTicker}`);
+        const response = await fetch(`${API_BASE}/api/financials/${activeTicker}`);
         if (response.ok) {
           const data = await response.json();
           if (!cancelled) setDefaultFinancials(data);
@@ -400,7 +434,7 @@ function App() {
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedTicker]);
+  }, [activeTicker]);
 
   const handleSubmit = async (e, customPrompt = null) => {
     if (e) e.preventDefault();
@@ -418,7 +452,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ prompt: activePrompt, ticker: selectedTicker || null }),
+        body: JSON.stringify({ prompt: activePrompt }),
       });
 
       if (!response.ok) {
@@ -429,6 +463,16 @@ function App() {
       const data = await response.json();
       setCurrentResponse(data);
       setPrompt('');
+      recordPromptHistory(activePrompt);
+
+      // The backend resolves (and auto-loads, if new) the company/companies this query was
+      // about — use that to drive the heading and default overview instead of any sidebar
+      // selection. A companyless/ambiguous response leaves the previous focus in place
+      // rather than blanking the heading out.
+      if (data.resolved_companies && data.resolved_companies.length > 0) {
+        setActiveCompanies(data.resolved_companies);
+        fetchCompanies(); // refresh the watchlist in case a new ticker was just auto-loaded
+      }
     } catch (err) {
       console.error(err);
       setError(err.message || 'FastAPI Server connection failed. Run uvicorn inside multihop-rag.');
@@ -447,7 +491,7 @@ function App() {
       });
       if (response.ok) {
         setCompanies((prev) => prev.filter((co) => co.ticker !== ticker));
-        setSelectedTicker((prev) => (prev === ticker ? '' : prev));
+        setActiveCompanies((prev) => prev.filter((co) => co.ticker !== ticker));
       } else {
         const data = await response.json().catch(() => ({}));
         setTickerMessage({ text: data.detail || `Failed to remove ${ticker}.`, isError: true });
@@ -477,8 +521,9 @@ function App() {
       if (response.ok && data.success) {
         setTickerMessage({ text: data.message, isError: false });
         setNewTicker('');
-        fetchCompanies();
-        setSelectedTicker(targetTicker);
+        const list = await fetchCompanies();
+        const loaded = list?.find((co) => co.ticker === targetTicker);
+        setActiveCompanies([{ ticker: targetTicker, name: loaded?.name || targetTicker }]);
       } else {
         setTickerMessage({ text: data.message || 'Filing ingestion failed.', isError: true });
       }
@@ -547,7 +592,7 @@ function App() {
           <div className="sidebar-block">
             <span className="sidebar-label">Watchlist</span>
             {companies.length > 0 && (
-              <p className="sidebar-hint">Select a company to scope your next question to it.</p>
+              <p className="sidebar-hint">Company is resolved from the prompt text, not click selection.</p>
             )}
             {companies.length === 0 ? (
               <div className="empty-state-inline">
@@ -556,11 +601,7 @@ function App() {
             ) : (
               <div className="watchlist">
                 {companies.map((co) => (
-                  <button
-                    key={co.ticker}
-                    onClick={() => setSelectedTicker((prev) => (prev === co.ticker ? '' : co.ticker))}
-                    className={`watchlist-item ${selectedTicker === co.ticker ? 'active' : ''}`}
-                  >
+                  <div key={co.ticker} className="watchlist-item"> 
                     <div className="watchlist-details">
                       <span className="watchlist-ticker">{co.ticker}</span>
                       <span className="watchlist-name">{co.name}</span>
@@ -573,25 +614,34 @@ function App() {
                     >
                       <X style={{ width: '13px', height: '13px' }} />
                     </span>
-                  </button>
+                  </div>
                 ))}
               </div>
             )}
           </div>
 
           <div className="sidebar-block grow">
-            <span className="sidebar-label">Analysis Templates</span>
-            <div className="template-list">
-              {sampleQuestions.map((q, idx) => (
-                <button
-                  key={idx}
-                  className="template-item"
-                  onClick={() => handleSubmit(null, q)}
-                >
-                  {q}
-                </button>
-              ))}
-            </div>
+            <span className="sidebar-label">Recent Prompts</span>
+            {promptHistory.length === 0 ? (
+              <div className="empty-state-inline">
+                <p>Your last {PROMPT_HISTORY_LIMIT} questions will appear here — ask something to get started.</p>
+              </div>
+            ) : (
+              <div className="history-list">
+                {promptHistory.map((q, idx) => (
+                  <button
+                    key={idx}
+                    className="history-item"
+                    onClick={() => {
+                      setPrompt(q);
+                      promptInputRef.current?.focus();
+                    }}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="sidebar-block">
@@ -606,13 +656,15 @@ function App() {
         <main className="main">
           <div className="context-bar">
             <div className="context-bar-left">
-              {selectedTicker ? (
+              {activeCompanies.length === 1 ? (
                 <>
-                  <span className="context-ticker">{selectedTicker}</span>
-                  <span className="context-name">{selectedCompany?.name || ''}</span>
+                  <span className="context-ticker">{activeCompanies[0].ticker}</span>
+                  <span className="context-name">{activeCompanies[0].name}</span>
                 </>
+              ) : activeCompanies.length >= 2 ? (
+                <span className="context-name">{activeCompanies.map((co) => co.name).join(' vs ')}</span>
               ) : (
-                <span className="context-name">No company selected — choose one from the watchlist.</span>
+                <span className="context-name">Company is resolved from the prompt text.</span>
               )}
             </div>
             {companyFactsUrl && (
@@ -623,7 +675,7 @@ function App() {
             )}
           </div>
 
-          {!currentResponse && defaultFinancials?.table?.length > 0 && (
+          {activeTicker && defaultFinancials?.table?.length > 0 && (
             <MetricStrip columns={defaultFinancials.table_columns} rows={defaultFinancials.table} />
           )}
 
@@ -637,7 +689,7 @@ function App() {
                 <div className="empty-panel">
                   <LineChart />
                   <h4>No chart data yet</h4>
-                  <p>Select a company from the watchlist, or ask about revenue, net income, EPS, assets, or liabilities to plot a trend.</p>
+                  <p>Ask about a company's revenue, net income, EPS, assets, or liabilities to plot a trend — any SEC-filed company works, not just ones already loaded.</p>
                 </div>
               )}
             </div>
@@ -646,7 +698,7 @@ function App() {
               {isLoading && (
                 <div className="spinner-block">
                   <div className="spinner"></div>
-                  <p>Routing query and verifying SEC SQLite records…</p>
+                  <p>Routing query and verifying SEC SQLite records… (a company mentioned for the first time is loaded from SEC EDGAR automatically — this can take up to ~30s)</p>
                 </div>
               )}
 
@@ -663,7 +715,7 @@ function App() {
                   <DataTable
                     columns={defaultFinancials.table_columns}
                     rows={defaultFinancials.table}
-                    ticker={selectedTicker}
+                    ticker={activeTicker}
                   />
                 ) : (
                   <div className="empty-panel">
@@ -690,12 +742,15 @@ function App() {
 
                   <div className="answer-header"><h3>Analysis</h3></div>
                   <div className="answer-body">
-                    {currentResponse.answer
-                      .split('\n')
-                      .filter((line) => line.trim().length > 0)
-                      .map((line, lIdx) => (
-                        <p key={lIdx} className="answer-line">{renderFigureLine(line)}</p>
-                      ))}
+                    <ul className="answer-list">
+                      {currentResponse.answer
+                        .split('\n')
+                        .map((line) => line.replace(/^\s*[-•*]\s*/, '').trim())
+                        .filter((line) => line.length > 0)
+                        .map((line, lIdx) => (
+                          <li key={lIdx} className="answer-line">{renderFigureLine(line)}</li>
+                        ))}
+                    </ul>
                   </div>
 
                   {currentResponse.sources && currentResponse.sources.length > 0 && (
@@ -706,11 +761,18 @@ function App() {
                       </div>
                       {currentResponse.sources.map((src, index) => {
                         const docSource = src.metadata?.source || `Database fact ${index + 1}`;
+                        const isLink = /^https?:\/\//i.test(docSource);
                         return (
                           <div key={index} className="citation">
                             <span className="citation-index">[{index + 1}]</span>
                             <div className="citation-body">
-                              <div className="citation-source">{docSource}</div>
+                              <div className="citation-source">
+                                {isLink ? (
+                                  <a href={docSource} target="_blank" rel="noreferrer">{docSource}</a>
+                                ) : (
+                                  docSource
+                                )}
+                              </div>
                               <div className="citation-text">{src.content}</div>
                             </div>
                           </div>
@@ -732,6 +794,7 @@ function App() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 disabled={isLoading}
+                ref={promptInputRef}
               />
               <button
                 type="submit"

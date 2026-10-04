@@ -13,7 +13,6 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,7 +62,6 @@ app.add_middleware(
 
 class QueryRequest(BaseModel):
     prompt: str
-    ticker: Optional[str] = None
 
 class QueryResponse(BaseModel):
     answer: str
@@ -72,6 +70,7 @@ class QueryResponse(BaseModel):
     chart_meta: dict = {}
     table: list = []
     table_columns: list = []
+    resolved_companies: list = []
 
 class LoadTickerRequest(BaseModel):
     ticker: str
@@ -91,7 +90,7 @@ def query_rag(request: QueryRequest):
         raise HTTPException(status_code=400, detail="Prompt cannot be empty")
 
     try:
-        result = run_agent(request.prompt, ticker_hint=request.ticker)
+        result = run_agent(request.prompt)
         return QueryResponse(
             answer=result["answer"],
             sources=result["sources"],
@@ -99,6 +98,7 @@ def query_rag(request: QueryRequest):
             chart_meta=result.get("chart_meta", {}),
             table=result.get("table", []),
             table_columns=result.get("table_columns", []),
+            resolved_companies=result.get("resolved_companies", []),
         )
     except Exception:
         logger.exception("Error executing graph agent")

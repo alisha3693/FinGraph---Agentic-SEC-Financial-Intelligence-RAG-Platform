@@ -50,6 +50,69 @@ def _ticker_reference() -> dict[str, tuple[str, str]]:
     }
 
 
+# Generic corporate-name words excluded from the name index below — indexing them would
+# make almost every one of the ~10k SEC-registered companies a "match" for common phrases
+# like "the group" or "national holdings" instead of a real single-company reference.
+_GENERIC_NAME_WORDS = {
+    "corp", "corporation", "company", "companies", "group", "holding", "holdings",
+    "international", "national", "global", "systems", "technologies", "technology",
+    "industries", "industry", "enterprises", "incorporated", "limited", "trust", "fund",
+}
+
+
+@lru_cache(maxsize=1)
+def _company_name_word_index() -> dict[str, set[str]]:
+    """word -> set of tickers whose SEC-registered company name contains that word (len>3,
+    excluding generic corporate words). Built once from the full ~10k-company SEC ticker
+    reference so a query can be checked against every SEC-registered company — not just
+    ones already ingested — without re-scanning the whole reference on every call."""
+    index: dict[str, set[str]] = {}
+    for ticker, (_, name) in _ticker_reference().items():
+        for word in re.findall(r"[a-z]+", name.lower()):
+            if len(word) > 3 and word not in _GENERIC_NAME_WORDS:
+                index.setdefault(word, set()).add(ticker)
+    return index
+
+
+def find_unloaded_ticker_candidates(query: str, exclude: set[str]) -> list[str]:
+    """Find tickers anywhere in the full SEC universe (excluding `exclude`, typically the
+    already-loaded tickers) referenced by symbol or company name in free text — lets a
+    query auto-resolve/auto-load a company that hasn't been ingested yet, including two at
+    once for a comparison naming two new companies.
+
+    Both matching modes require the word to actually be capitalized as typed — the natural
+    English signal for a proper noun. This was tightened after two real false positives in
+    testing: matching lowercased words let "net" (from "net income") auto-load Cloudflare
+    (ticker NET), and let "trend" (from "the general trend") auto-load an obscure filer
+    literally named "High-Trend International Group" — being the *only* SEC company whose
+    name contains a word is not enough on its own, since the ~10k-company reference includes
+    many tiny/obscure filers with ordinary-English-word names. Requiring capitalization (and
+    for bare symbols, full uppercase) rules out both without a hand-maintained stopword list.
+    The query's own first word is excluded from the name check, since English capitalizes it
+    regardless of whether it's a proper noun."""
+    ref = _ticker_reference()
+    raw_words = re.findall(r"[A-Za-z0-9]+", query)
+
+    # Exact ticker-symbol match: only trusted typed in its real uppercase form (e.g. "AMD",
+    # "IBM") — each match is independently high-confidence, so multiple at once (a
+    # comparison naming two real tickers) all come back together.
+    symbol_matches = sorted({w for w in raw_words if len(w) >= 3 and w == w.upper() and w in ref} - exclude)
+    if symbol_matches:
+        return symbol_matches
+
+    index = _company_name_word_index()
+    found: list[str] = []
+    for word in raw_words[1:]:
+        if not word[:1].isupper():
+            continue
+        tickers = index.get(word.lower())
+        if tickers and len(tickers) == 1:
+            (ticker,) = tickers
+            if ticker not in exclude and ticker not in found:
+                found.append(ticker)
+    return found
+
+
 def resolve_ticker_to_cik(ticker: str) -> tuple[str | None, str | None]:
     """Resolve a ticker using the SEC-maintained ticker reference."""
     normalized = ticker.strip().upper()
@@ -197,7 +260,6 @@ def _filing_text(record: dict[str, Any]) -> str:
 
 def ingest_filings(ticker: str, cik: str, name: str) -> int:
     """Sync this ticker's vector documents to its current 12 most recent filings.
-
     Diffs against what's already indexed by `accession_number` (SEC's own unique ID per
     filing, stored on every chunk's metadata) instead of always wiping and re-embedding
     everything: filings that fell out of the most-recent-12 window are pruned, filings
