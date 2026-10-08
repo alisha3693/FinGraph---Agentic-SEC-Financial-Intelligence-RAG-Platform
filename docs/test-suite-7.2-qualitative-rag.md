@@ -42,6 +42,10 @@ This fix did **not** resolve #27's underlying retrieval miss — see below.
 
 ## Not fixed: 7 retrieval misses on standard 10-K sections
 
+> **Update (2026-10-04): the filing-window fix is applied and NVIDIA and Amazon were re-ingested.** Re-checked: #22 and #23 now answer from the 10-K. #28 is partial. #26 still misses, but the NVIDIA 10-K does contain the concentration risk, so it is now a retrieval miss. Details in [test-suite-qualitative-30.md](test-suite-qualitative-30.md). The original correction is kept below for the record.
+>
+> **Correction (2026-10-04): several of these misses were data gaps, not retrieval misses.** The ingest keeps only the 12 most recent 10-K/10-Q/8-K filings combined. NVIDIA and Amazon file many 8-Ks, so their 10-Ks are not in the index at all. Checked against SEC's submissions list and the live Chroma store: NVIDIA's latest 10-K (2026-02-25) and Amazon's (2026-02-06) have zero chunks indexed. That makes #22 (Amazon cybersecurity), #23 (NVIDIA IP), #26 (NVIDIA customer concentration), and #28 (Amazon critical accounting estimates) unanswerable from the index, regardless of retrieval. The diagnosis below, which blamed the embedding model, applies only to #18 and #27 (Tesla) and #30 (Microsoft), where the filing is indexed. Details: [test-suite-qualitative-30.md](test-suite-qualitative-30.md).
+
 **The pattern:** every failure is the model correctly saying "I don't know" / "the context doesn't contain X" for a *real, standard, near-universally-present* 10-K section — cybersecurity (Item 1C, mandatory since 2023), intellectual property, customer concentration, critical accounting estimates (a standard MD&A subsection), human capital (Item 1, mandatory since 2020), MD&A liquidity discussion, and EV regulatory risk. These aren't obscure or company-specific topics where "not applicable" would be a plausible real answer — they should be retrievable.
 
 **Diagnosis (not guessed — checked directly against the live vector store):**

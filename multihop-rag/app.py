@@ -1,7 +1,8 @@
+from typing import Optional
 import os
 
 # Must run before anything below transitively imports torch/sentence-transformers
-# (graph_agent -> vector_store -> langchain_huggingface -> sentence_transformers -> torch).
+# (agent -> vector_store -> langchain_huggingface -> sentence_transformers -> torch).
 # On Windows, torch and other numeric libs each often ship their own bundled OpenMP
 # runtime (libiomp5md.dll); when two copies end up loaded in the same process and real
 # parallel numeric work starts (the first actual embedding pass, not the harmless
@@ -19,7 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
-from graph_agent import run_agent, get_default_financials
+from agent import run_agent, get_default_financials
 from db_manager import get_companies, delete_company
 from sec_client import load_company_data, delete_ticker_vectors
 from vector_store import get_embeddings
@@ -45,12 +46,18 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="SEC EDGAR Financial Intelligence API", lifespan=lifespan)
 
-# CORS is scoped to the actual local frontend origins (Vite's default dev ports).
+# CORS is scoped to the actual frontend origins: Vite's local dev ports plus the deployed
+# Vercel app. Set FRONTEND_ORIGINS to override (comma-separated, no trailing slashes).
 # No credentials (cookies/auth) are used, so allow_credentials stays off — that combination
 # with a wildcard origin is invalid anyway and browsers reject it.
-FRONTEND_ORIGINS = os.getenv(
-    "FRONTEND_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"
-).split(",")
+FRONTEND_ORIGINS = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv(
+        "FRONTEND_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173,https://fin-graph-agentic-sec-financial-int.vercel.app",
+    ).split(",")
+    if origin.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +78,8 @@ class QueryResponse(BaseModel):
     table: list = []
     table_columns: list = []
     resolved_companies: list = []
+    # Optional summary/verdict/sections/figure tiles; the frontend falls back to `answer`.
+    structured: Optional[dict] = None
 
 class LoadTickerRequest(BaseModel):
     ticker: str
@@ -99,6 +108,7 @@ def query_rag(request: QueryRequest):
             table=result.get("table", []),
             table_columns=result.get("table_columns", []),
             resolved_companies=result.get("resolved_companies", []),
+            structured=result.get("structured"),
         )
     except Exception:
         logger.exception("Error executing graph agent")
@@ -171,4 +181,7 @@ if __name__ == "__main__":
     # supervisor keeps holding the socket, so every request then hangs with no response).
     # Opt in with `RELOAD=1` only for pure code-editing sessions with no ingest running.
     reload = os.getenv("RELOAD", "").lower() in ("1", "true", "yes")
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=reload)
+    # Hosts like Render inject PORT and route traffic to whatever port the app binds to
+    # (it isn't always 8000). Locally PORT is unset, so this stays on 8000.
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("app:app", host="0.0.0.0", port=port, reload=reload)

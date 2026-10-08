@@ -6,6 +6,12 @@ history of *why* each piece looks the way it does, see
 [project-status-report.md](project-status-report.md) §0. Read this if you're new to the
 codebase and want to understand the pipeline end to end.
 
+> **Note (2026-10-08):** §2 and §10 reflect the current file layout. The detailed walkthrough
+> in §4–§7 predates two changes: routing is now one LLM "understand" step
+> (`agent/understand.py`) rather than keyword lists, and the old `graph_agent.py` and the
+> large `App.jsx`/`index.css` were split into the files listed in §2. Function names in
+> those sections still exist, but they now live in the `agent/` modules listed below.
+
 ---
 
 ## 1. What this project is
@@ -65,15 +71,37 @@ server-side rendering.
                                                           www.sec.gov) — external, real data
 ```
 
-Five backend modules, each with one job:
+Backend modules, each with one job:
 
 | File | Responsibility |
 |---|---|
 | [app.py](../multihop-rag/app.py) | FastAPI routes — the only HTTP surface |
-| [graph_agent.py](../multihop-rag/graph_agent.py) | LangGraph agent: routing + all 5 answer strategies |
+| [agent/](../multihop-rag/agent/) | LangGraph agent (package; `run_agent` and `get_default_financials` are its public API) |
+| ↳ [config.py](../multihop-rag/agent/config.py) | Metric definitions, limits, chart/filing types, the LLM client |
+| ↳ [state.py](../multihop-rag/agent/state.py) | `AgentState`, the graph's state |
+| ↳ [understand.py](../multihop-rag/agent/understand.py) | Entry node: one LLM call plans companies, metrics, years, branches, verdict, chart |
+| ↳ [fallbacks.py](../multihop-rag/agent/fallbacks.py) | Keyword rules used only if that call fails |
+| ↳ [companies.py](../multihop-rag/agent/companies.py) | Company/ticker resolution and "not ingested" replies |
+| ↳ [financial.py](../multihop-rag/agent/financial.py) | Answers from structured SEC figures (one company or a comparison) |
+| ↳ [facts.py](../multihop-rag/agent/facts.py) | Code-computed growth/ratio facts, the figure check, tiles, scoreboard, chart data |
+| ↳ [filings.py](../multihop-rag/agent/filings.py) | Answers from filing text (one company or a comparison) |
+| ↳ [retrieval.py](../multihop-rag/agent/retrieval.py) | Query expansion, dense + BM25 search fused with RRF, filing scoping, reranking |
+| ↳ [structure.py](../multihop-rag/agent/structure.py) | Summary/verdict/section parsing and the mixed-answer summary |
+| ↳ [graph.py](../multihop-rag/agent/graph.py) | Resolve and join nodes, the graph wiring, `run_agent` |
+| [bm25.py](../multihop-rag/bm25.py) | Keyword (BM25) index used by retrieval |
 | [sec_client.py](../multihop-rag/sec_client.py) | Talks to SEC EDGAR; ingests filings + facts; resolves a company name/ticker against the full SEC universe |
 | [db_manager.py](../multihop-rag/db_manager.py) | SQLite schema + queries for structured financials |
 | [vector_store.py](../multihop-rag/vector_store.py) | Shared embedding-model singleton + Chroma path |
+
+Frontend (`frontend/src/`):
+
+| Path | Responsibility |
+|---|---|
+| [App.jsx](../frontend/src/App.jsx) | Page layout, state, API calls |
+| [components/](../frontend/src/components/) | `AnswerView` (answer panel), `Charts` (chart views + switcher), `TrendChart`, `DataTable`, `MetricStrip`, `richText` (figure and citation rendering) |
+| [lib/](../frontend/src/lib/) | `chartData` (chart-view data), `format` (formatting, colours, CSV), `storage` (saved preferences) |
+| [hooks/useDivider.js](../frontend/src/hooks/useDivider.js) | Draggable dividers (chart/response split, sidebar width) |
+| [index.css](../frontend/src/index.css) + [styles/](../frontend/src/styles/) | Styles split by area; `index.css` imports them in cascade order |
 
 ---
 
@@ -573,12 +601,14 @@ developed and verified against the Docker Compose setup specifically.
 
 | I want to... | Look at |
 |---|---|
-| Change how questions get routed | `router_node`, `graph_agent.py` |
-| Change which words trigger auto-load/comparison/mixed | `FINANCIAL_KEYWORDS`/`QUALITATIVE_KEYWORDS`/`MAX_COMPARISON_COMPANIES`, `graph_agent.py` |
-| Change how an unfamiliar company gets recognized/auto-loaded | `find_unloaded_ticker_candidates`, `sec_client.py` |
-| Add a new financial metric | `METRIC_DEFS`/`METRIC_ORDER` in graph_agent.py + the tag map in `parse_financials`, sec_client.py |
-| Change chunking/retrieval for filings | `ingest_filings` and `filing_rag_node`, both in their respective files |
-| Change the chart/table visuals | `TrendChart`/`DataTable` in App.jsx, styles in `index.css` |
-| Change how the mixed-answer merge works | `mixed_node`, `graph_agent.py` |
+| Change how questions get routed | `UNDERSTAND_PROMPT` / `understand_node`, `agent/understand.py` |
+| Change the fallback used when routing fails | `agent/fallbacks.py` |
+| Change how an unfamiliar company gets recognized | `find_unloaded_ticker_candidates`, `sec_client.py`; `_find_companies`, `agent/companies.py` |
+| Add a new financial metric | `METRIC_DEFS`/`METRIC_ORDER` in `agent/config.py` + the tag map in `parse_financials`, sec_client.py |
+| Change chunking/retrieval for filings | `ingest_filings` (sec_client.py); `_retrieve_with_expansion` / `_rerank`, `agent/retrieval.py` |
+| Change the computed facts or the figure check | `agent/facts.py` |
+| Change the chart views | `components/Charts.jsx`, data in `lib/chartData.js`, styles in `styles/chart.css` |
+| Change the answer panel | `components/AnswerView.jsx`, styles in `styles/answer.css` |
+| Change how the mixed-answer merge works | `mixed_node` (`agent/graph.py`) and `_mixed_structure` (`agent/structure.py`) |
 | Add a new API route | app.py, then wire it into App.jsx's fetch calls |
 | Understand known bugs / what's next | [project-status-report.md](project-status-report.md) |

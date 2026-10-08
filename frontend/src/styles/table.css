@@ -1,0 +1,126 @@
+/* ---------------------------------------------------------- Data table */
+
+/* flex-shrink:0 matters here: this is a direct flex child of .content-column (a column
+   flex container), and it has overflow:hidden (for the rounded corners). Per the flexbox
+   spec, a flex item's automatic min-height becomes 0 instead of its content size whenever
+   its overflow isn't visible — so without flex-shrink:0, the browser silently shrinks this
+   below its content height and clips rows via its own overflow:hidden, instead of letting
+   .content-column's overflow-y:auto scroll to show them. */
+.data-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.data-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-alt);
+}
+
+.data-table-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.data-table-title svg { width: 13px; height: 13px; }
+
+.export-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.export-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.data-table-scroll {
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.81rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table th {
+  text-align: right;
+  white-space: nowrap;
+  padding: 0.5rem 0.85rem;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface-alt);
+  transition: var(--transition);
+}
+
+.data-table th:first-child {
+  text-align: left;
+}
+
+.data-table th span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.data-table th:hover {
+  color: var(--text-primary);
+}
+
+.data-table th.sorted {
+  color: var(--accent);
+}
+
+.data-table td {
+  text-align: right;
+  white-space: nowrap;
+  padding: 0.45rem 0.85rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+}
+
+.data-table td:first-child {
+  text-align: left;
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.data-table tbody tr:hover td {
+  background: var(--bg-hover);
+}

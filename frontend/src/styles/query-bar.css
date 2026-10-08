@@ -1,0 +1,62 @@
+/* ------------------------------------------------------------- Query bar */
+
+.query-bar {
+  border-top: 1px solid var(--border);
+  padding: 0.5rem 1.75rem;
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.query-form {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.query-input {
+  flex-grow: 1;
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  outline: none;
+  font-size: 0.86rem;
+  padding: 0.42rem 0.75rem;
+  transition: var(--transition);
+}
+
+.query-input::placeholder {
+  color: var(--text-muted);
+}
+
+.query-input:focus {
+  border-color: var(--accent);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.query-submit {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  height: 32px;
+  width: 32px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-on-accent);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.query-submit svg { width: 14px; height: 14px; }
+
+.query-submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.query-submit:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

@@ -1,0 +1,237 @@
+/* ---------------------------------------------------------------- Sidebar */
+
+.sidebar {
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.sidebar-block {
+  padding: 1.1rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-block:last-child {
+  border-bottom: none;
+}
+
+.sidebar-block.grow {
+  flex-grow: 1;
+}
+
+.sidebar-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.7rem;
+  display: block;
+}
+
+.sidebar-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  margin-top: -0.25rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Ticker ingest form */
+
+.ticker-form {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.field-input {
+  flex-grow: 1;
+  /* Flex items default to min-width:auto (their intrinsic content width), which for a
+     text input can exceed the sidebar's available space and push a horizontal scrollbar
+     onto .sidebar. min-width:0 lets it actually shrink to fit .ticker-form's flex row. */
+  min-width: 0;
+  background: var(--bg-surface-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.6rem;
+  font-size: 0.83rem;
+  color: var(--text-primary);
+  outline: none;
+  transition: var(--transition);
+}
+
+.field-input::placeholder {
+  color: var(--text-muted);
+}
+
+.field-input:focus {
+  border-color: var(--accent);
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.icon-btn {
+  background: var(--text-primary);
+  border: 1px solid var(--text-primary);
+  border-radius: var(--radius-md);
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--bg-surface);
+  transition: var(--transition);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.status-msg {
+  font-size: 0.76rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+  line-height: 1.4;
+  margin-top: 0.6rem;
+}
+
+.status-msg svg { flex-shrink: 0; margin-top: 0.1rem; }
+.status-msg.ok { color: var(--positive); }
+.status-msg.err { color: var(--negative); }
+.status-msg.pending { color: var(--text-muted); }
+
+/* Watchlist */
+
+.empty-state-inline {
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 0.7rem;
+}
+
+.empty-state-inline p {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.watchlist {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.watchlist-item {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.55rem;
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.watchlist-item:hover {
+  background: var(--bg-hover);
+}
+
+.watchlist-item.active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.watchlist-details {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.watchlist-ticker {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+  flex-shrink: 0;
+}
+
+.watchlist-name {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.watchlist-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: var(--transition);
+  flex-shrink: 0;
+}
+
+.watchlist-item:hover .watchlist-remove {
+  opacity: 1;
+}
+
+.watchlist-remove:hover {
+  color: var(--negative);
+  background: var(--negative-soft);
+}
+
+/* Recent prompt history */
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.history-item {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: left;
+  line-height: 1.35;
+}
+
+.history-item:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}

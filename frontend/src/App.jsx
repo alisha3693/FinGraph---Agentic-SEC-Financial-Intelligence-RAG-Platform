@@ -1,350 +1,36 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
-  Send, BookOpen, ShieldAlert, Plus, X, CheckCircle,
-  ArrowUpDown, ArrowUp, ArrowDown, ArrowUpRight, ArrowDownRight,
-  Download, Table2, BarChart3, LineChart, Building2, FileText,
-  Sun, Moon,
+  Send, BookOpen, ShieldAlert, Plus, X, CheckCircle, BarChart3, LineChart, Building2, FileText, Sun, Moon,
 } from 'lucide-react';
-
-const THEME_KEY = 'sec-intel-theme';
-const PROMPT_HISTORY_KEY = 'sec-intel-prompt-history';
-const PROMPT_HISTORY_LIMIT = 5;
-
-function getInitialTheme() {
-  try {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === 'light' || stored === 'dark') return stored;
-  } catch {
-    // localStorage unavailable (private mode, disabled storage) — fall through to OS setting.
-  }
-  return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-}
-
-function getInitialPromptHistory() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(PROMPT_HISTORY_KEY));
-    if (Array.isArray(stored)) return stored.filter((p) => typeof p === 'string').slice(0, PROMPT_HISTORY_LIMIT);
-  } catch {
-    // localStorage unavailable or holds malformed JSON — start with an empty history.
-  }
-  return [];
-}
+import { THEME_KEY, PROMPT_HISTORY_KEY, PROMPT_HISTORY_LIMIT, getInitialTheme, getInitialPromptHistory } from './lib/storage';
+import { SPLIT, SIDEBAR, useDivider } from './hooks/useDivider';
+import { METRIC_COLORS, COMPARISON_PALETTE } from './lib/format';
+import { DataTable } from './components/DataTable';
+import { MetricStrip } from './components/MetricStrip';
+import { TrendChart } from './components/TrendChart';
+import { AnswerView } from './components/AnswerView';
+import { ChartPanel } from './components/Charts';
+import { availableCharts } from './lib/chartData';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-const METRIC_COLORS = { "Revenue": "#1d4ed8", "Net Income": "#0a7a4c", "EPS": "#b45309", "Assets": "#4338ca", "Liabilities": "#b42318" };
-const COMPARISON_PALETTE = ["#1d4ed8", "#0a7a4c", "#b45309", "#4338ca", "#b42318", "#0e7490", "#7c3aed", "#525252"];
-
-// Matches currency amounts ("$391.04B", "$6.11") and percentages ("12.5%") so they can be
-// set off from surrounding prose without touching any other text. Longer words (billion,
-// million) must be listed before their single-letter abbreviations (B, M) — regex
-// alternation takes the first branch that matches at a position, not the longest, so
-// "B|billion" would match just the "b" of "billion" and leave "illion" outside the highlight.
-const FIGURE_RE = /(\$\d[\d,]*\.?\d*(?:\s?(?:billion|million|thousand|B|M|K))?|\b\d+(?:\.\d+)?%)/i;
-
-function renderFigureLine(line) {
-  return line.split(FIGURE_RE).map((part, i) =>
-    i % 2 === 1
-      ? <span key={i} className="figure">{part}</span>
-      : <React.Fragment key={i}>{part}</React.Fragment>
-  );
-}
-
-function formatCell(column, value) {
-  if (value === null || value === undefined) return '—';
-  if (typeof value !== 'number') return value;
-  if (column.unit === '$B') return `$${value.toFixed(2)}B`;
-  if (column.unit === '$') return `$${value.toFixed(2)}`;
-  return value;
-}
-
-function toCsv(columns, rows) {
-  const escape = (v) => {
-    const s = String(v ?? '');
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const header = columns.map((c) => escape(c.label)).join(',');
-  const lines = rows.map((row) => columns.map((c) => escape(row[c.key])).join(','));
-  return [header, ...lines].join('\n');
-}
-
-function downloadCsv(filename, csvText) {
-  const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
-
-// Renders the agent's structured numeric result as a real, sortable table — separate from
-// the narrative text — so the underlying data can actually be inspected, sorted, and
-// exported instead of being buried inside a wall of prose.
-function DataTable({ columns, rows, ticker }) {
-  const [sort, setSort] = useState(null); // { key, dir: 'asc' | 'desc' }
-
-  const sortedRows = useMemo(() => {
-    if (!sort) return rows;
-    const copy = [...rows];
-    copy.sort((a, b) => {
-      const av = a[sort.key];
-      const bv = b[sort.key];
-      if (av === bv) return 0;
-      const cmp = av > bv ? 1 : -1;
-      return sort.dir === 'asc' ? cmp : -cmp;
-    });
-    return copy;
-  }, [rows, sort]);
-
-  const toggleSort = (key) => {
-    setSort((prev) => {
-      if (!prev || prev.key !== key) return { key, dir: 'asc' };
-      if (prev.dir === 'asc') return { key, dir: 'desc' };
-      return null;
-    });
-  };
-
-  if (!columns || columns.length === 0 || !rows || rows.length === 0) return null;
-
-  return (
-    <div className="data-table-wrap">
-      <div className="data-table-toolbar">
-        <span className="data-table-title"><Table2 /> Structured Data</span>
-        <button
-          type="button"
-          className="export-btn"
-          onClick={() => downloadCsv(`${ticker || 'sec-data'}.csv`, toCsv(columns, rows))}
-        >
-          <Download style={{ width: '12px', height: '12px' }} /> Export CSV
-        </button>
-      </div>
-      <div className="data-table-scroll">
-        <table className="data-table">
-          <thead>
-            <tr>
-              {columns.map((col) => {
-                const active = sort?.key === col.key;
-                const Icon = active ? (sort.dir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
-                return (
-                  <th key={col.key} onClick={() => toggleSort(col.key)} className={active ? 'sorted' : ''}>
-                    <span>{col.label}</span>
-                    <Icon style={{ width: '11px', height: '11px' }} />
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {sortedRows.map((row, i) => (
-              <tr key={i}>
-                {columns.map((col) => (
-                  <td key={col.key}>{formatCell(col, row[col.key])}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// Latest-year KPI row (Revenue, Net Income, EPS, Assets, Liabilities) with a year-over-year
-// delta, derived entirely from the same rows the table/chart already use.
-function MetricStrip({ columns, rows }) {
-  if (!columns || columns.length === 0 || !rows || rows.length === 0) return null;
-
-  const metricCols = columns.filter((c) => c.key !== 'year');
-  const latest = rows[rows.length - 1];
-  const prior = rows.length > 1 ? rows[rows.length - 2] : null;
-
-  return (
-    <div className="metric-strip">
-      {metricCols.map((col) => {
-        const latestVal = latest[col.key];
-        const priorVal = prior ? prior[col.key] : null;
-        let deltaPct = null;
-        if (typeof latestVal === 'number' && typeof priorVal === 'number' && priorVal !== 0) {
-          deltaPct = ((latestVal - priorVal) / Math.abs(priorVal)) * 100;
-        }
-        const dir = deltaPct === null ? 'flat' : deltaPct > 0.05 ? 'up' : deltaPct < -0.05 ? 'down' : 'flat';
-        const DeltaIcon = dir === 'up' ? ArrowUpRight : dir === 'down' ? ArrowDownRight : null;
-
-        return (
-          <div key={col.key} className="metric">
-            <div className="metric-label">{col.label} · FY{latest.year}</div>
-            <div className="metric-value-row">
-              <span className="metric-value">{formatCell(col, latestVal)}</span>
-              {deltaPct !== null && (
-                <span className={`metric-delta ${dir}`}>
-                  {DeltaIcon && <DeltaIcon />}
-                  {Math.abs(deltaPct).toFixed(1)}%
-                </span>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// Dependency-free analytical line chart: minimal gridlines, tabular axis labels, and a
-// hover crosshair with a compact tooltip — no decorative borders or chart chrome.
-function TrendChart({ chartData, chartMeta }) {
-  const [hoverIdx, setHoverIdx] = useState(null);
-
-  if (!chartData || chartData.length === 0) return null;
-
-  const isComparison = chartMeta?.type === 'comparison';
-  const series = chartMeta?.series || [];
-  const metricLabels = chartMeta?.metrics || [];
-
-  const years = chartData.map((d) => d.name);
-  const width = 460;
-  const height = 240;
-  const padding = { top: 14, right: 14, bottom: 26, left: 42 };
-  const plotW = width - padding.left - padding.right;
-  const plotH = height - padding.top - padding.bottom;
-
-  let maxVal = 0;
-  chartData.forEach((d) => {
-    Object.keys(d).forEach((k) => {
-      if (k !== 'name' && typeof d[k] === 'number' && d[k] > maxVal) maxVal = d[k];
-    });
-  });
-  maxVal = maxVal ? maxVal * 1.15 : 100;
-
-  const keys = Object.keys(chartData[0]).filter((k) => k !== 'name');
-  const xFor = (idx) => padding.left + (idx * plotW) / (chartData.length - 1 || 1);
-  const yFor = (val) => padding.top + plotH - ((val || 0) * plotH) / maxVal;
-
-  const points = {};
-  keys.forEach((key) => {
-    points[key] = chartData.map((d, idx) => ({ x: xFor(idx), y: yFor(d[key]) }));
-  });
-
-  // Comparison mode has ticker-specific keys that vary per query, so colors are assigned
-  // by position from a shared palette instead of guessing at specific ticker strings.
-  const colorFor = (key, idx) =>
-    (!isComparison && METRIC_COLORS[key]) || COMPARISON_PALETTE[idx % COMPARISON_PALETTE.length];
-
-  const metricsText = metricLabels.length > 0 ? metricLabels.join(', ') : 'Financial Trends';
-  const headerText = isComparison
-    ? `${series.join(' vs ')} — ${metricsText}`
-    : `${series[0] ? series[0] + ' ' : ''}${metricsText} Trend`;
-
-  // Hover zones centered on each point (not raw equal slices), so the crosshair snaps to
-  // whichever year the cursor is actually closest to.
-  const hoverZones = years.map((_, idx) => {
-    const x = xFor(idx);
-    const start = idx === 0 ? padding.left : (xFor(idx - 1) + x) / 2;
-    const end = idx === years.length - 1 ? width - padding.right : (x + xFor(idx + 1)) / 2;
-    return { start, width: end - start };
-  });
-
-  return (
-    <div className="chart-panel-inner">
-      <div className="panel-title">
-        <div>
-          <h3>{headerText}</h3>
-        </div>
-      </div>
-
-      <div className="chart-frame">
-        <svg viewBox={`0 0 ${width} ${height}`} className="chart-svg" preserveAspectRatio="none">
-          {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
-            const y = padding.top + ratio * plotH;
-            const val = (maxVal * (1 - ratio)).toFixed(0);
-            return (
-              <g key={idx}>
-                <line x1={padding.left} y1={y} x2={width - padding.right} y2={y} style={{ stroke: 'var(--border)' }} strokeWidth="1" />
-                <text x={padding.left - 8} y={y + 3} style={{ fill: 'var(--text-muted)' }} fontSize="9" textAnchor="end">{val}</text>
-              </g>
-            );
-          })}
-
-          <line
-            x1={padding.left} y1={height - padding.bottom}
-            x2={width - padding.right} y2={height - padding.bottom}
-            style={{ stroke: 'var(--border-strong)' }} strokeWidth="1"
-          />
-
-          {years.map((yr, idx) => (
-            <text key={idx} x={xFor(idx)} y={height - padding.bottom + 15} style={{ fill: 'var(--text-muted)' }} fontSize="10" textAnchor="middle">{yr}</text>
-          ))}
-
-          {hoverIdx !== null && (
-            <line
-              x1={xFor(hoverIdx)} y1={padding.top} x2={xFor(hoverIdx)} y2={height - padding.bottom}
-              style={{ stroke: 'var(--border-strong)' }} strokeWidth="1" strokeDasharray="2 3"
-            />
-          )}
-
-          {keys.map((key, idx) => {
-            const linePoints = points[key];
-            const pathD = linePoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-            const color = colorFor(key, idx);
-            return (
-              <g key={key}>
-                <path d={pathD} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                {linePoints.map((p, i) => (
-                  <circle key={i} cx={p.x} cy={p.y} r={hoverIdx === i ? 3.5 : 2.5} fill={color} style={{ stroke: 'var(--bg-surface)' }} strokeWidth="1" />
-                ))}
-              </g>
-            );
-          })}
-
-          {hoverZones.map((zone, idx) => (
-            <rect
-              key={idx}
-              x={zone.start}
-              y={padding.top}
-              width={Math.max(zone.width, 0)}
-              height={plotH}
-              fill="transparent"
-              onMouseEnter={() => setHoverIdx(idx)}
-              onMouseLeave={() => setHoverIdx(null)}
-            />
-          ))}
-        </svg>
-
-        {hoverIdx !== null && (
-          <div className="chart-tooltip" style={{ left: `${(xFor(hoverIdx) / width) * 100}%` }}>
-            <div className="tooltip-year">{years[hoverIdx]}</div>
-            {keys.map((key, idx) => {
-              const val = chartData[hoverIdx][key];
-              return (
-                <div key={key} className="tooltip-row">
-                  <span className="legend-dot" style={{ backgroundColor: colorFor(key, idx) }}></span>
-                  <span>{key}: {typeof val === 'number' ? val.toFixed(2) : (val ?? '—')}</span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      <div className="chart-legend">
-        {keys.map((key, idx) => (
-          <div key={key} className="legend-item">
-            <span className="legend-dot" style={{ backgroundColor: colorFor(key, idx) }}></span>
-            <span>{key}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 function App() {
   const [prompt, setPrompt] = useState('');
   const [submittedPrompt, setSubmittedPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentResponse, setCurrentResponse] = useState(null);
+
+  // Chart/response split: the chart column's share of the workspace width, dragged with the
+  // divider (or arrow keys) and remembered. Focus mode hides the chart so the response gets
+  // the full width.
+  const [focusResponse, setFocusResponse] = useState(false);
+  const workspaceRef = useRef(null);
+  const layoutRef = useRef(null);
+  const split = useDivider(SPLIT, (e) => {
+    const rect = workspaceRef.current.getBoundingClientRect();
+    return ((e.clientX - rect.left) / rect.width) * 100;
+  });
+  const sidebar = useDivider(SIDEBAR, (e) => e.clientX - layoutRef.current.getBoundingClientRect().left);
   const [error, setError] = useState(null);
 
   // App states
@@ -496,7 +182,7 @@ function App() {
         const data = await response.json().catch(() => ({}));
         setTickerMessage({ text: data.detail || `Failed to remove ${ticker}.`, isError: true });
       }
-    } catch (err) {
+    } catch {
       setTickerMessage({ text: 'Error connecting to database loader.', isError: true });
     }
   };
@@ -527,15 +213,18 @@ function App() {
       } else {
         setTickerMessage({ text: data.message || 'Filing ingestion failed.', isError: true });
       }
-    } catch (err) {
+    } catch {
       setTickerMessage({ text: 'Error connecting to database loader.', isError: true });
     } finally {
       setLoadingTicker(false);
     }
   };
 
-  const showDefaultChart = !currentResponse?.chart_data?.length && defaultFinancials?.chart_data?.length > 0;
-  const showQueryChart = currentResponse?.chart_data?.length > 0;
+  // Chart views the current response's data supports (empty for a response without data,
+  // which keeps the previous behaviour: the default chart, or the empty panel).
+  const queryCharts = currentResponse ? availableCharts(currentResponse) : [];
+  const showDefaultChart = !queryCharts.length && defaultFinancials?.chart_data?.length > 0;
+  const showQueryChart = queryCharts.length > 0;
   const showDefaultTable = !currentResponse && defaultFinancials?.table?.length > 0;
 
   return (
@@ -560,7 +249,11 @@ function App() {
         </div>
       </nav>
 
-      <div className="layout">
+      <div
+        ref={layoutRef}
+        className={`layout${sidebar.dragging ? ' is-resizing' : ''}`}
+        style={{ '--sidebar-w': `${sidebar.value}px` }}
+      >
         {/* Sidebar */}
         <aside className="sidebar">
           <div className="sidebar-block">
@@ -652,6 +345,9 @@ function App() {
           </div>
         </aside>
 
+        {/* Zero-width grid column; the handle overhangs the sidebar's edge (see .sidebar-divider). */}
+        <div className="sidebar-divider" aria-label="Resize sidebar" {...sidebar.handlers} />
+
         {/* Main workspace */}
         <main className="main">
           <div className="context-bar">
@@ -679,10 +375,21 @@ function App() {
             <MetricStrip columns={defaultFinancials.table_columns} rows={defaultFinancials.table} />
           )}
 
-          <div className="workspace">
+          <div
+            ref={workspaceRef}
+            className={`workspace${focusResponse && currentResponse && !isLoading ? ' is-focus' : ''}${split.dragging ? ' is-resizing' : ''}`}
+            style={{ '--chart-w': `${split.value}%` }}
+          >
             <div className="chart-column">
               {showQueryChart ? (
-                <TrendChart chartData={currentResponse.chart_data} chartMeta={currentResponse.chart_meta} />
+                <ChartPanel
+                  key={submittedPrompt}
+                  response={currentResponse}
+                  charts={queryCharts}
+                  palette={COMPARISON_PALETTE}
+                  metricColors={METRIC_COLORS}
+                  renderTrend={() => <TrendChart chartData={currentResponse.chart_data} chartMeta={currentResponse.chart_meta} />}
+                />
               ) : showDefaultChart ? (
                 <TrendChart chartData={defaultFinancials.chart_data} chartMeta={defaultFinancials.chart_meta} />
               ) : (
@@ -693,6 +400,8 @@ function App() {
                 </div>
               )}
             </div>
+
+            <div className="workspace-divider" aria-label="Resize chart and response" {...split.handlers} />
 
             <div className="content-column">
               {isLoading && (
@@ -727,60 +436,13 @@ function App() {
               )}
 
               {currentResponse && !isLoading && !error && (
-                <div className="answer-block">
-                  <div className="answer-query">Query — <span>{submittedPrompt}</span></div>
-
-                  {currentResponse.table && currentResponse.table.length > 0 && (
-                    <div className="answer-table">
-                      <DataTable
-                        columns={currentResponse.table_columns}
-                        rows={currentResponse.table}
-                        ticker={currentResponse.chart_meta?.series?.join('-vs-')}
-                      />
-                    </div>
-                  )}
-
-                  <div className="answer-header"><h3>Analysis</h3></div>
-                  <div className="answer-body">
-                    <ul className="answer-list">
-                      {currentResponse.answer
-                        .split('\n')
-                        .map((line) => line.replace(/^\s*[-•*]\s*/, '').trim())
-                        .filter((line) => line.length > 0)
-                        .map((line, lIdx) => (
-                          <li key={lIdx} className="answer-line">{renderFigureLine(line)}</li>
-                        ))}
-                    </ul>
-                  </div>
-
-                  {currentResponse.sources && currentResponse.sources.length > 0 && (
-                    <div className="citations">
-                      <div className="citations-title">
-                        <BookOpen />
-                        Sources ({currentResponse.sources.length})
-                      </div>
-                      {currentResponse.sources.map((src, index) => {
-                        const docSource = src.metadata?.source || `Database fact ${index + 1}`;
-                        const isLink = /^https?:\/\//i.test(docSource);
-                        return (
-                          <div key={index} className="citation">
-                            <span className="citation-index">[{index + 1}]</span>
-                            <div className="citation-body">
-                              <div className="citation-source">
-                                {isLink ? (
-                                  <a href={docSource} target="_blank" rel="noreferrer">{docSource}</a>
-                                ) : (
-                                  docSource
-                                )}
-                              </div>
-                              <div className="citation-text">{src.content}</div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </div>
+                <AnswerView
+                  key={submittedPrompt}
+                  response={currentResponse}
+                  prompt={submittedPrompt}
+                  focused={focusResponse}
+                  onToggleFocus={() => setFocusResponse((f) => !f)}
+                />
               )}
             </div>
           </div>
@@ -810,5 +472,6 @@ function App() {
     </>
   );
 }
+
 
 export default App;

@@ -149,8 +149,8 @@ def _duration_days(start: str, end: str) -> int | None:
         return None
 
 
-def _annual_value(entries: list[dict[str, Any]], year: int, instant: bool = False) -> float | None:
-    """Pick the single value for a fiscal year out of a list of XBRL fact entries.
+def _annual_entry(entries: list[dict[str, Any]], year: int, instant: bool = False) -> dict[str, Any] | None:
+    """Pick the single fact entry for a fiscal year out of a list of XBRL fact entries.
 
     Matches on the fact's own reporting period (`start`/`end` dates), not on `fy`/`fp` —
     `fy` is the fiscal year *of the filing* a value was reported in, not necessarily the
@@ -181,7 +181,71 @@ def _annual_value(entries: list[dict[str, Any]], year: int, instant: bool = Fals
     # later filings; break ties by most recently filed.
     frame_re = _INSTANT_FRAME_RE if instant else _ANNUAL_FRAME_RE
     candidates.sort(key=lambda e: (bool(frame_re.match(e.get("frame") or "")), e.get("filed", "")), reverse=True)
-    return candidates[0].get("val")
+    return candidates[0]
+
+
+def _annual_value(entries: list[dict[str, Any]], year: int, instant: bool = False) -> float | None:
+    entry = _annual_entry(entries, year, instant)
+    return entry.get("val") if entry else None
+
+
+# A restated value counts as a stock split only when the old/new ratio is this close to a whole
+# number of at least 2 (EPS is rounded to cents, so 1.74 -> 0.17 reads as 10.2x, not 10x).
+SPLIT_RATIO_TOLERANCE = 0.05
+
+
+def _split_events(entries: list[dict[str, Any]]) -> list[tuple[str, float]]:
+    """Stock splits inferred from the filings themselves, as (last_filed_before_split, factor).
+
+    A per-share figure is reported again, on the new share basis, in later 10-Ks that carry
+    it as a comparative. When the same fiscal period appears in two filings with values
+    whose ratio is a whole number (4.52 then 1.13 -> a 4-for-1 split), the split happened
+    between those two filing dates. Evidence from different periods for the same split is
+    merged by overlapping filing-date intervals. Nothing is looked up or hardcoded: no
+    split dates or ratios are assumed."""
+    by_period: dict[tuple[str, str], dict[str, float]] = {}
+    for e in entries:
+        if e.get("form") != "10-K" or e.get("val") in (None, 0):
+            continue
+        if (_duration_days(e.get("start", ""), e.get("end", "")) or 0) < 340:
+            continue
+        by_period.setdefault((e["start"], e["end"]), {}).setdefault(e.get("filed", ""), e["val"])
+
+    evidence = []  # (old_filed, new_filed, factor); factor > 1 for a forward split
+    for filings in by_period.values():
+        ordered = sorted(filings.items())
+        for (old_filed, old_val), (new_filed, new_val) in zip(ordered, ordered[1:]):
+            if old_val * new_val <= 0:
+                continue
+            ratio = abs(old_val / new_val)
+            factor = ratio if ratio >= 1 else 1 / ratio
+            whole = round(factor)
+            if whole >= 2 and abs(factor - whole) / whole <= SPLIT_RATIO_TOLERANCE:
+                evidence.append((old_filed, new_filed, float(whole) if ratio >= 1 else 1 / whole))
+
+    clusters: list[dict[str, Any]] = []
+    for old_filed, new_filed, factor in sorted(evidence, key=lambda x: x[1]):
+        for c in clusters:
+            if c["factor"] == factor and old_filed < c["new"] and c["old"] < new_filed:
+                c["old"], c["new"] = max(c["old"], old_filed), min(c["new"], new_filed)
+                break
+        else:
+            clusters.append({"old": old_filed, "new": new_filed, "factor": factor})
+    return [(c["old"], c["factor"]) for c in clusters]
+
+
+def _split_adjusted_eps(entries: list[dict[str, Any]], year: int) -> float | None:
+    """EPS for a fiscal year on the share basis of the newest filing, so every year in the
+    series is comparable. A value filed on or before a split's last pre-split filing is
+    divided by that split's factor."""
+    entry = _annual_entry(entries, year)
+    if not entry or entry.get("val") is None:
+        return None
+    value = entry["val"]
+    for last_pre_split_filed, factor in _split_events(entries):
+        if entry.get("filed", "") <= last_pre_split_filed:
+            value /= factor
+    return value
 
 
 def parse_financials(facts_json: dict[str, Any] | None) -> dict[int, dict[str, float | None]]:
@@ -215,7 +279,10 @@ def parse_financials(facts_json: dict[str, Any] | None) -> dict[int, dict[str, f
                 continue
             unit_entries = next(iter(gaap[tag].get("units", {}).values()), [])
             for year in years:
-                value = _annual_value(unit_entries, year, instant=metric in {"assets", "liabilities"})
+                if metric == "eps":
+                    value = _split_adjusted_eps(unit_entries, year)
+                else:
+                    value = _annual_value(unit_entries, year, instant=metric in {"assets", "liabilities"})
                 if value is not None and metric not in result[year]:
                     result[year][metric] = value
             # Only stop trying further tags once every year is covered — a company can
@@ -226,7 +293,29 @@ def parse_financials(facts_json: dict[str, Any] | None) -> dict[int, dict[str, f
             # the rest.
             if all(metric in result[year] for year in years):
                 break
+    # Some filers (Amazon) never tag a total "Liabilities" figure. Their balance sheet still gives
+    # total liabilities-and-equity and stockholders' equity, and the difference is total liabilities.
+    # Only used for years with no tagged liabilities value.
+    liabilities_and_equity = gaap.get("LiabilitiesAndStockholdersEquity", {}).get("units", {})
+    stockholders_equity = gaap.get("StockholdersEquity", {}).get("units", {})
+    total_entries = next(iter(liabilities_and_equity.values()), [])
+    equity_entries = next(iter(stockholders_equity.values()), [])
+    for year in years:
+        if "liabilities" in result[year]:
+            continue
+        total = _annual_value(total_entries, year, instant=True)
+        equity = _annual_value(equity_entries, year, instant=True)
+        if total is not None and equity is not None:
+            result[year]["liabilities"] = total - equity
+
     return {year: metrics for year, metrics in result.items() if metrics}
+
+
+# Filings indexed per company, and the forms guaranteed a slot in that window (see
+# _filing_records). Annual and quarterly reports carry most of the substance that filing
+# questions need, so they can't be crowded out by 8-K volume.
+FILING_WINDOW_SIZE = 12
+GUARANTEED_FORMS = ("10-K", "10-Q")
 
 
 def _filing_records(cik: str) -> list[dict[str, Any]]:
@@ -246,7 +335,20 @@ def _filing_records(cik: str) -> list[dict[str, Any]]:
             "document": primary_document,
             "url": f"{SEC_BASE_URL}/Archives/edgar/data/{int(cik)}/{accession.replace('-', '')}/{primary_document}",
         })
-    return records[:12]
+    # Keep the latest filing of each guaranteed form, then fill the remaining slots with the
+    # newest filings of any form. Without the guarantee, a filer that files many 8-Ks
+    # (NVIDIA, Amazon) fills a plain newest-12 window with 8-Ks and 10-Qs, pushing its 10-K
+    # out of the index entirely. SEC lists newest first, so the first match per form is the latest.
+    keep: set[str] = set()
+    for form in GUARANTEED_FORMS:
+        latest = next((r["accession"] for r in records if r["form"] == form), None)
+        if latest:
+            keep.add(latest)
+    for record in records:
+        if len(keep) >= FILING_WINDOW_SIZE:
+            break
+        keep.add(record["accession"])
+    return [r for r in records if r["accession"] in keep]
 
 
 def _filing_text(record: dict[str, Any]) -> str:
@@ -259,10 +361,11 @@ def _filing_text(record: dict[str, Any]) -> str:
 
 
 def ingest_filings(ticker: str, cik: str, name: str) -> int:
-    """Sync this ticker's vector documents to its current 12 most recent filings.
-    Diffs against what's already indexed by `accession_number` (SEC's own unique ID per
-    filing, stored on every chunk's metadata) instead of always wiping and re-embedding
-    everything: filings that fell out of the most-recent-12 window are pruned, filings
+    """Sync this ticker's vector documents to its current filing window (see
+    _filing_records: the latest 10-K and 10-Q are always included, plus the newest filings
+    to fill 12 slots). Diffs against what's already indexed by `accession_number` (SEC's own
+    unique ID per filing, stored on every chunk's metadata) instead of always wiping and
+    re-embedding everything: filings that fell out of the window are pruned, filings
     already indexed are left untouched, and only genuinely new filings are downloaded and
     embedded. A routine re-ingest of an already-loaded, unchanged company is therefore a
     near no-op instead of a full re-download-and-re-embed.

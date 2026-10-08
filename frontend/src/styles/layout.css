@@ -1,0 +1,62 @@
+/* ------------------------------------------------------------------ Grid */
+
+/* --sidebar-w is set from App (the sidebar's draggable divider); the middle column is the
+   zero-width divider itself. */
+.layout {
+  display: grid;
+  grid-template-columns: var(--sidebar-w, 248px) 0 minmax(0, 1fr);
+  flex-grow: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.layout.is-resizing {
+  cursor: col-resize;
+  user-select: none;
+}
+
+.sidebar-divider {
+  position: relative;
+  z-index: 3;
+  outline: none;
+  touch-action: none;
+}
+
+/* Hit area overhangs the sidebar edge by a few pixels on each side. */
+.sidebar-divider::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  cursor: col-resize;
+}
+
+.sidebar-divider::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 3px;
+  background: transparent;
+  transition: var(--transition);
+  pointer-events: none;
+}
+
+.sidebar-divider:hover::after,
+.sidebar-divider:focus-visible::after,
+.layout.is-resizing .sidebar-divider::after {
+  background: var(--accent-border);
+}
+
+@media (max-width: 960px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar-divider {
+    display: none;
+  }
+}

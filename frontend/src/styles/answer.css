@@ -1,0 +1,557 @@
+/* -------------------------------------------------------------- Answer */
+
+/* flex-shrink:0 for the same reason as .data-table-wrap above: this is a direct flex
+   child of .content-column with overflow:hidden (rounded corners), which zeroes its
+   flexbox automatic min-height — without this it gets silently shrunk-and-clipped
+   instead of triggering .content-column's scroll for long answers. */
+.answer-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.answer-query {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 1rem;
+  background: var(--bg-surface-alt);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.answer-query span {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.answer-query-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.answer-focus-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.22rem 0.5rem;
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.answer-focus-toggle svg { width: 12px; height: 12px; }
+
+.answer-focus-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+}
+
+/* The expand toggle only makes sense where chart and response sit side by side. */
+@media (max-width: 1200px) {
+  .answer-focus-toggle {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .chart-column,
+  .content-column {
+    padding: 1rem;
+  }
+
+  .context-bar,
+  .query-bar {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .metric-strip .metric:first-child {
+    padding-left: 1rem;
+  }
+
+  /* Six figures can't fit a phone width; keep one line each and scroll the strip. */
+  .metric-strip .metric {
+    flex-wrap: nowrap;
+    min-width: max-content;
+  }
+
+  .answer-verdict {
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+
+  .source-excerpt,
+  .source-toggle {
+    margin-left: 0;
+  }
+}
+
+.answer-table {
+  padding: 1rem 1rem 0;
+}
+
+.answer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1rem 0;
+}
+
+.answer-header h3 {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.answer-body {
+  padding: 0.75rem 1rem 1rem;
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+}
+
+.answer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.answer-line {
+  position: relative;
+  padding-left: 1.05rem;
+  font-size: 0.92rem;
+  line-height: 1.65;
+  color: var(--text-primary);
+}
+
+.answer-line::before {
+  content: '';
+  position: absolute;
+  left: 0.1rem;
+  top: 0.72em;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.answer-line + .answer-line {
+  margin-top: 0.55rem;
+}
+
+.figure {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.05rem 0.28rem;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* Citations */
+
+.citations {
+  border-top: 1px solid var(--border);
+  padding: 0.9rem 1rem 1rem;
+}
+
+.citations-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.6rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.citations-title svg { width: 12px; height: 12px; }
+
+.citation {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.citation:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.citation-index {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  padding-top: 0.1rem;
+}
+
+.citation-body {
+  min-width: 0;
+}
+
+.citation-source {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.2rem;
+  overflow-wrap: anywhere;
+}
+
+.citation-source a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.citation-source a:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.citation-text {
+  font-size: 0.79rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  max-height: 3.6em;
+  overflow-y: auto;
+}
+
+/* Structured answer: lead summary, verdict, parts, figure tiles, scoreboard, sources */
+
+.answer-lead {
+  padding: 0.95rem 1rem 0.2rem;
+}
+
+.answer-summary {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+/* The lead text is read as a sentence; figure chips there are just bold, not boxed. */
+.answer-summary .figure,
+.answer-verdict .figure,
+.part-summary .figure {
+  font-family: inherit;
+  font-weight: 600;
+  color: inherit;
+  background: none;
+  padding: 0;
+}
+
+.answer-verdict {
+  display: flex;
+  gap: 0.75rem;
+  align-items: baseline;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 2px solid var(--accent);
+  background: var(--bg-surface-alt);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.answer-verdict-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.answer-verdict p {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+.answer-part + .answer-part {
+  border-top: 1px solid var(--border);
+  margin-top: 0.25rem;
+}
+
+.part-summary {
+  margin: 0 0 0.75rem;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.answer-section + .answer-section {
+  margin-top: 0.9rem;
+}
+
+.answer-section-title {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  margin-bottom: 0.9rem;
+}
+
+.kpi {
+  padding: 0.65rem 0.8rem;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  margin: 0 -1px -1px 0;
+}
+
+.kpi .metric-value {
+  font-size: 1.05rem;
+}
+
+.kpi-detail {
+  margin-top: 0.2rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-detail svg { width: 11px; height: 11px; flex-shrink: 0; }
+.kpi-detail.up { color: var(--positive); }
+.kpi-detail.down { color: var(--negative); }
+.kpi-detail.flat { color: var(--text-muted); }
+
+.scoreboard-wrap {
+  margin-bottom: 0.9rem;
+  overflow-x: auto;
+}
+
+.scoreboard {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.scoreboard th,
+.scoreboard td {
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.scoreboard th:first-child,
+.scoreboard td:first-child {
+  text-align: left;
+  color: var(--text-secondary);
+}
+
+.scoreboard th {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.scoreboard td {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.scoreboard td:first-child {
+  font-family: var(--font-sans);
+}
+
+.scoreboard td.is-top {
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.scoreboard-note {
+  margin-top: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.answer-data {
+  margin-top: 0.9rem;
+}
+
+.answer-data > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 0.3rem 0;
+  user-select: none;
+}
+
+.answer-data > summary:hover {
+  color: var(--accent);
+}
+
+.answer-data[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+.cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.15rem;
+  height: 1.05rem;
+  margin: 0 0.08rem;
+  padding: 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 0.12em;
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.cite:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.cite-missing {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.source-group + .source-group {
+  margin-top: 0.8rem;
+}
+
+.source-group-title {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.3rem;
+}
+
+.source {
+  padding: 0.5rem 0.5rem;
+  margin: 0 -0.5rem;
+  border-top: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background-color 0.3s ease;
+}
+
+.source-group .source:first-of-type {
+  border-top: none;
+}
+
+.source.is-highlighted {
+  background: var(--accent-soft);
+}
+
+.source-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  min-width: 0;
+  flex: 1;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.source-meta strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.source-meta span + span::before,
+.source-meta strong + span::before {
+  content: '·';
+  margin-right: 0.5rem;
+  color: var(--border-strong);
+}
+
+.source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.source-link svg { width: 11px; height: 11px; }
+
+.source-link:hover {
+  color: var(--accent);
+}
+
+.source-excerpt {
+  margin: 0.3rem 0 0 1.6rem;
+  font-size: 0.79rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.source-excerpt.is-open {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
+.source-toggle {
+  margin: 0.2rem 0 0 1.6rem;
+  padding: 0;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.source-toggle:hover {
+  color: var(--accent);
+}

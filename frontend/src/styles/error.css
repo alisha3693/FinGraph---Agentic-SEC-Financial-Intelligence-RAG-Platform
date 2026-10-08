@@ -1,0 +1,31 @@
+/* --------------------------------------------------------------- Error */
+
+.error-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.5rem;
+  flex-grow: 1;
+  padding: 2rem;
+}
+
+.error-panel svg {
+  width: 28px;
+  height: 28px;
+  color: var(--negative);
+  margin-bottom: 0.3rem;
+}
+
+.error-panel h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.error-panel p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  max-width: 380px;
+  line-height: 1.5;
+}
